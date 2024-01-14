@@ -18,6 +18,10 @@ from scipy import constants
 
 
 class PointCharge:
+    """
+    Class to represent a single point charge.
+    """
+
     def __init__(self, charge: float or int, loc: list = [0, 0]):
         """
         :param charge: Charge of the point charge in Coulombs
@@ -27,7 +31,7 @@ class PointCharge:
         self.loc = loc
         self.E = []
 
-    def calculate_E_field(self, rmax=1.5, step=0.01):
+    def calculate_E_field(self, rmax: float = 1.5, step: float =0.01):
         """
         Calculate the strength of the electric charge
         :param rmax: Maximum distance from the point charge to calculate the field in meters
@@ -66,14 +70,15 @@ class PointCharge:
         # TODO: add functionality to place the charge at a location other than the origin -- will have to offset the loc from the origin
         return self.E, [xmin, xmax], [ymin, ymax]
 
-    def plot(self, cmap='plasma'):
+    def plot(self, rmax: float = 1.5, cmap='plasma', figsize: list[int] = [6, 6]):
         """
         Produce a plot of the 2D field of the point charge
         :param cmap: Matplotlib colormap to use. See https://matplotlib.org/stable/gallery/color/colormap_reference.html
-        :return: None
+        :param figsize: [x, y] size of the figure to produce. Must be a 2-element list
+        :return: None # TODO: return the figure obj. instead
         """
-        _, xrange, yrange = self.calculate_E_field()
-        plt.figure()
+        _, xrange, yrange = self.calculate_E_field(rmax)
+        plt.figure(figsize = figsize)
         # TODO: handle negative charge values
         plt.imshow(np.log(self.E), cmap=cmap, origin='lower')
         plt.colorbar(label = 'lnE [V/m]')
@@ -86,6 +91,7 @@ class PointCharge:
         plt.yticks(np.linspace(0, len(self.E[0]), len(yticks)), [str(np.round(ytick, 2)) for ytick in yticks],
                    fontsize=8)
         plt.show()
+        # TODO: we should return the figure obj. so that it can be further manipulated from the notebook
 
 
 class PointChargeSystem(PointCharge):
@@ -94,14 +100,16 @@ class PointChargeSystem(PointCharge):
         """
         Class to handle the fields of a system of point charges.
         :param chargesdict: Dictionary of charges of the form: {'q1':[charge, [x,y]],...'qn':[charge,[x,y]]}
+        Example: chargesdict = {'q1': [7, [1, 3]], 'q2': [-4, [2, 4]]}
         """
         super().__init__()
         self.chargesdict = chargesdict
         self.net_E = None
 
-    def calculate_net_E_field(self):
+    def calculate_net_E_field(self) -> np.array:
         """
         Calculate the net electric field for the system of point charges in chargesdict.
+        :return: 2D numpy array representing the net field values produced by the system of point charges
         """
         for q, loc in self.chargesdict.values():
             E = PointCharge(q, loc).calculate_E_field()
