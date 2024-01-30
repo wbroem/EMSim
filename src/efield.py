@@ -2,19 +2,13 @@
 Classes to represent a single point charge and a point charge system.
 """
 
-import numpy as np
+import json
+import os
+
 import matplotlib.pyplot as plt
+import numpy as np
+
 from scipy import constants
-
-# FIXME: In order to handle the system of point charges, construct an equation with a term for the field of each point
-#        charge. Do this through a for loop where each item is a term, then use np.sum to add them all up at each
-#        location in the image. THE WAY THIS IS CURRENTLY IMPLEMENTED WILL NOT WORK. CHANGE TO THIS.
-
-
-# NOTE: this will only work for a discrete system of charges, and not for a continuous distribution described
-#       by some function... can we work in another way to incorporate continuous distributions? ie create a function and 
-#       feed it into a class for dealing with this? Would have to find a way to integrate the function (maybe numpy or scipy
-#       has something for this)
 
 
 class PointCharge:
@@ -31,7 +25,7 @@ class PointCharge:
         self.loc = loc
         self.E = []
 
-    def calculate_E_field(self, rmax: float = 1.5, step: float =0.01):
+    def calculate_E_field(self, rmax: float = 1.5, step: float = 0.01):
         """
         Calculate the strength of the electric charge
         :param rmax: Maximum distance from the point charge to calculate the field in meters
@@ -45,76 +39,123 @@ class PointCharge:
         k = (4 * pi * eps_0)**-1
 
         # Find the x,y bounds for the specified radius (rmax)
-        xmax = rmax / np.sqrt(2)
-        xmin = -xmax
-        ymax = rmax / np.sqrt(2)
-        ymin = -ymax
-        # Define pixel coordinate offset
-        x_offset = (xmax - np.abs(xmin)) / 2 # TODO: incorporate this into the plot coords
-        y_offset = (ymax - np.abs(ymin)) / 2
-        # Calculate the E field for all values of (x,y) in the specified radius
-        #for y in np.arange(ymin, ymax, step):
-        for y in np.arange(self.loc[1] - ymax, self.loc[1] + ymax, step):
-            yprime = y - self.loc[1]
-            E_row_vals = []
-            #for x in np.arange(xmin, xmax, step):
-            for x in np.arange(self.loc[0] - xmax, self.loc[0] + xmax, step):
-                xprime = x - self.loc[0]
-                r_sq = xprime**2 + yprime**2
-                try:
-                    E = k * self.charge / (r_sq)
-                except ZeroDivisionError:
-                    E = 0
-                E_row_vals.append(E)
-            self.E.append(E_row_vals)
-        # TODO: add functionality to place the charge at a location other than the origin -- will have to offset the loc from the origin
-        return self.E, [xmin, xmax], [ymin, ymax]
+        self.xmax = self.loc[0] + rmax
+        self.xmin = self.loc[0] - rmax
+        self.ymax = self.loc[1] + rmax
+        self.ymin = self.loc[1] - rmax
 
-    def plot(self, rmax: float = 1.5, cmap='plasma', figsize: list[int] = [6, 6]):
+        # Calculate the E field for all values of (x,y) in the specified radius
+        for y in np.arange(self.ymax, self.ymin, -step):
+            _Y = y - self.loc[1]
+            E_row_vals = []
+            for x in np.arange(self.xmax, self.xmin, -step):
+                _X = x - self.loc[0]
+                r_sq = _X**2 + _Y**2
+                try:
+                    E_loc_val = k * self.charge / (r_sq)
+                except ZeroDivisionError:
+                    # E -> oo at the point charge location
+                    E_loc_val = np.inf
+                E_row_vals.append(E_loc_val)
+            self.E.append(E_row_vals)
+        self.E = np.array(self.E)
+        return self.E
+
+    def plot(self, rmax: float = 1.5, step: float = 0.01, cmap='plasma', figsize: list[int] = [6, 6]):
         """
         Produce a plot of the 2D field of the point charge
         :param cmap: Matplotlib colormap to use. See https://matplotlib.org/stable/gallery/color/colormap_reference.html
         :param figsize: [x, y] size of the figure to produce. Must be a 2-element list
-        :return: None # TODO: return the figure obj. instead
+        :return: None
         """
-        _, xrange, yrange = self.calculate_E_field(rmax)
+        if not self.E:
+            self.calculate_E_field(rmax, step = step)
         plt.figure(figsize = figsize)
         # TODO: handle negative charge values
         plt.imshow(np.log(self.E), cmap=cmap, origin='lower')
         plt.colorbar(label = 'lnE [V/m]')
         plt.xlabel('X [m]', fontsize = 12)
         plt.ylabel('Y [m]', fontsize = 12)
-        xticks = np.arange(xrange[0], xrange[1], 0.2) # TODO: fix these ticks to coincide with the actual primed coordinates !
-        plt.xticks(np.linspace(0, len(self.E[0]), len(xticks)), [str(np.round(xtick, 2)) for xtick in xticks],
+        xticks = np.arange(self.xmin, self.xmax, rmax / 10)
+        plt.xticks(np.linspace(0, len(self.E[0]), len(xticks)), [str(np.round(xtick, 3)) for xtick in xticks],
                    fontsize=8, rotation = 90)
-        yticks = np.arange(yrange[0], yrange[1], 0.2)
-        plt.yticks(np.linspace(0, len(self.E[0]), len(yticks)), [str(np.round(ytick, 2)) for ytick in yticks],
+        yticks = np.arange(self.ymin, self.ymax, rmax / 10)
+        plt.yticks(np.linspace(0, len(self.E[0]), len(yticks)), [str(np.round(ytick, 3)) for ytick in yticks],
                    fontsize=8)
-        plt.show()
-        # TODO: we should return the figure obj. so that it can be further manipulated from the notebook
+
 
 
 class PointChargeSystem(PointCharge):
-    # TODO: will have to incorporate the locations into this...
-    def __init__(self, chargesdict):
+    def __init__(self, charge_config: dict = {}):
         """
         Class to handle the fields of a system of point charges.
-        :param chargesdict: Dictionary of charges of the form: {'q1':[charge, [x,y]],...'qn':[charge,[x,y]]}
-        Example: chargesdict = {'q1': [7, [1, 3]], 'q2': [-4, [2, 4]]}
+        :param charge_config: Dictionary of charges of the form: 
+            {"q1": {"charge": q1, "loc": [x1, y1]}, "q2": {"charge": q2, "loc": [x2, y2]}
+            Alternatively, a .json file following this format can be loaded via the 
+            load_charge_config() function.
         """
         super().__init__()
-        self.chargesdict = chargesdict
+        self.charge_config = charge_config
         self.net_E = None
+
+    def load_charge_config(self, config_path) -> dict:
+        """
+        Load a .json file to specify the charge configuration for this object.
+        :param config_path: Path to the .json file to be loaded.
+        """
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f'The specified path: {config_path} does not exist.')
+        ext = os.path.splitext(config_path)[-1]
+        if not ext == '.json':
+            raise TypeError('The configuration file should be a .json file, not {ext}')
+        
+        self.charge_config = json.load(config_path)
+        return self.charge_config
+
+    def _find_coord_extrema(self, rmax: float = 1.5):
+        """
+        Determine the dimensions of the E field image; ie find (xmin, xmax, ymin, ymax)
+        considering the position and rmax for all of the point charges in the system.
+        """
+        xmax_list = []
+        xmin_list = []
+        ymax_list = []
+        ymin_list = []
+        for charge in self.charge_config:
+            loc = charge['loc']
+            xmax = loc[0] + rmax
+            xmax_list.append(xmax)
+            xmin = loc[0] - rmax
+            xmin_list.append(xmin)
+            ymax = loc[1] + rmax
+            ymax_list.append(ymax)
+            ymin = loc[1] - rmax
+            ymin_list.append(ymin)
+        self.xmax = max(xmax_list)
+        self.xmin = min(xmin_list)
+        self.ymax = max(ymax_list)
+        self.ymin = min(ymin_list)
+
+        return self.xmax, self.xmin, self.ymax, self.ymin
 
     def calculate_net_E_field(self) -> np.array:
         """
         Calculate the net electric field for the system of point charges in chargesdict.
         :return: 2D numpy array representing the net field values produced by the system of point charges
         """
-        for q, loc in self.chargesdict.values():
+        # FIXME: In order to handle the system of point charges, construct an equation with a term for the field of each point
+#        charge. Do this through a for loop where each item is a term, then use np.sum to add them all up at each
+#        location in the image. THE WAY THIS IS CURRENTLY IMPLEMENTED WILL NOT WORK.
+
+        for q, loc in self.charge_config.values(): # change how we read this to match the new config format
+            # TODO: need to create E matrix such that it incorporates rmax from each point charge
             E = PointCharge(q, loc).calculate_E_field()
             if not self.net_E:
                 self.net_E = np.shape(E)
             self.net_E = np.add(self.net_E, E)
             del E # free up memory as we go
         return self.net_E
+
+    def plot(self, rmax: float = 1.5, cmap='plasma', figsize: list[int] = [6, 6]):
+        super().plot()
+        # TODO: whatever plot changes we need for this class
