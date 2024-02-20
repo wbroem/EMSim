@@ -3,11 +3,9 @@ Classes to represent a single point charge and a point charge system.
 """
 
 import json
-import os
-
 import matplotlib.pyplot as plt
 import numpy as np
-
+from pathlib import Path
 from scipy import constants
 
 
@@ -16,7 +14,7 @@ class PointCharge:
     Class to represent a single point charge.
     """
 
-    def __init__(self, charge: float or int, loc: list = [0, 0]):
+    def __init__(self, charge: float | int, loc: list = [0, 0]):
         """
         :param charge: Charge of the point charge in Coulombs
         :param loc: Location [x,y] of the point charge
@@ -25,7 +23,40 @@ class PointCharge:
         self.loc = loc
         self.E = []
 
-    def calculate_E_field(self, rmax: float = 1.5, step: float = 0.01):
+    def _find_coord_extrema(self, rmax: float = 1.5):
+        """
+        Find the x,y bounds for the specified radius (rmax)
+        """
+
+        self.xmax = self.loc + rmax
+        self.xmin = self.loc - rmax
+        self.ymax = self.loc + rmax
+        self.ymin = self.loc - rmax
+
+        return self.xmax, self.xmin, self.ymax, self.ymin
+    
+    @staticmethod # TODO: Should this be a static or class method? 
+    def coulombs_law(charge, r_sq):
+        """
+        Utility function to calculate Coulomb's Law: E = k*q/r^2
+        for a given charge and distance squared from that charge.
+        :param charge: Charge of the point charge in Coulombs
+        :param r_sq: Distance squared from the point charge in m^2
+        """
+
+        # Define constants
+        eps_0 = constants.epsilon_0
+        pi = constants.pi
+        k = (4 * pi * eps_0)**-1
+        
+        try:
+            E_loc_val = k * charge / (r_sq)
+        except ZeroDivisionError:
+            # E -> oo at the point charge location
+            E_loc_val = np.inf
+        return E_loc_val
+
+    def calculate_E_field(self, step: float = 0.01):
         """
         Calculate the strength of the electric charge
         :param rmax: Maximum distance from the point charge to calculate the field in meters
@@ -33,32 +64,18 @@ class PointCharge:
         :param step: Step size between each x,y value (set to a smaller value for higher resolution)
         :return: 2D numpy array representing the field values produced by the point charge
         """
-        # Define constants for Coulomb's Law: E = k*q/r^2
-        eps_0 = constants.epsilon_0
-        pi = constants.pi
-        k = (4 * pi * eps_0)**-1
-
-        # Find the x,y bounds for the specified radius (rmax)
-        self.xmax = self.loc[0] + rmax
-        self.xmin = self.loc[0] - rmax
-        self.ymax = self.loc[1] + rmax
-        self.ymin = self.loc[1] - rmax
 
         # Calculate the E field for all values of (x,y) in the specified radius
         for y in np.arange(self.ymax, self.ymin, -step):
             _Y = y - self.loc[1]
-            E_row_vals = []
+            E_row_vals = [] #np.array
             for x in np.arange(self.xmax, self.xmin, -step):
                 _X = x - self.loc[0]
                 r_sq = _X**2 + _Y**2
-                try:
-                    E_loc_val = k * self.charge / (r_sq)
-                except ZeroDivisionError:
-                    # E -> oo at the point charge location
-                    E_loc_val = np.inf
-                E_row_vals.append(E_loc_val)
-            self.E.append(E_row_vals)
-        self.E = np.array(self.E)
+                E_loc_val = self.coulombs_law(self.charge, r_sq)
+                E_row_vals.append(E_loc_val) #np.concatenate
+            self.E.append(E_row_vals) #np.concatenate
+        self.E = np.array(self.E) #remove this line
         return self.E
 
     def plot(self, rmax: float = 1.5, step: float = 0.01, cmap='plasma', figsize: list[int] = [6, 6]):
@@ -69,7 +86,7 @@ class PointCharge:
         :return: None
         """
         if not self.E:
-            self.calculate_E_field(rmax, step = step)
+            self.calculate_E_field(rmax, step)
         plt.figure(figsize = figsize)
         # TODO: handle negative charge values
         plt.imshow(np.log(self.E), cmap=cmap, origin='lower')
@@ -86,7 +103,7 @@ class PointCharge:
 
 
 class PointChargeSystem(PointCharge):
-    def __init__(self, charge_config: dict = {}):
+    def __init__(self, charge_config: dict | str | Path = {}):
         """
         Class to handle the fields of a system of point charges.
         :param charge_config: Dictionary of charges of the form: 
@@ -97,15 +114,17 @@ class PointChargeSystem(PointCharge):
         super().__init__()
         self.charge_config = charge_config
         self.net_E = None
+        self.rmax = None
 
     def load_charge_config(self, config_path) -> dict:
         """
         Load a .json file to specify the charge configuration for this object.
         :param config_path: Path to the .json file to be loaded.
         """
-        if not os.path.exists(config_path):
+        config_path = Path(config_path)
+        if not config_path.exists():
             raise FileNotFoundError(f'The specified path: {config_path} does not exist.')
-        ext = os.path.splitext(config_path)[-1]
+        ext = config_path.suffix
         if not ext == '.json':
             raise TypeError('The configuration file should be a .json file, not {ext}')
         
@@ -117,6 +136,7 @@ class PointChargeSystem(PointCharge):
         Determine the dimensions of the E field image; ie find (xmin, xmax, ymin, ymax)
         considering the position and rmax for all of the point charges in the system.
         """
+        self.rmax = rmax
         xmax_list = []
         xmin_list = []
         ymax_list = []
@@ -138,7 +158,7 @@ class PointChargeSystem(PointCharge):
 
         return self.xmax, self.xmin, self.ymax, self.ymin
 
-    def calculate_net_E_field(self) -> np.array:
+    def calculate_net_E_field(self, step = 0.01) -> np.array:
         """
         Calculate the net electric field for the system of point charges in chargesdict.
         :return: 2D numpy array representing the net field values produced by the system of point charges
@@ -146,16 +166,16 @@ class PointChargeSystem(PointCharge):
         # FIXME: In order to handle the system of point charges, construct an equation with a term for the field of each point
 #        charge. Do this through a for loop where each item is a term, then use np.sum to add them all up at each
 #        location in the image. THE WAY THIS IS CURRENTLY IMPLEMENTED WILL NOT WORK.
-
+        self._find_coord_extrema()
         for q, loc in self.charge_config.values(): # change how we read this to match the new config format
             # TODO: need to create E matrix such that it incorporates rmax from each point charge
-            E = PointCharge(q, loc).calculate_E_field()
+            E = PointCharge(q, loc).calculate_E_field(step) # TODO: can we use super() instead?
             if not self.net_E:
                 self.net_E = np.shape(E)
             self.net_E = np.add(self.net_E, E)
             del E # free up memory as we go
         return self.net_E
 
-    def plot(self, rmax: float = 1.5, cmap='plasma', figsize: list[int] = [6, 6]):
+    def plot(self, rmax: float = 1.5, step: float = 0.01, cmap='plasma', figsize: list[int] = [6, 6]):
         super().plot()
         # TODO: whatever plot changes we need for this class
