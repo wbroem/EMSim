@@ -14,24 +14,24 @@ class PointCharge:
     Class to represent a single point charge.
     """
 
-    def __init__(self, charge: float | int, loc: list = [0, 0]):
+    def __init__(self, charge: float | int = 0, loc: list = [0, 0]):
         """
         :param charge: Charge of the point charge in Coulombs
         :param loc: Location [x,y] of the point charge
         """
         self.charge = charge
         self.loc = loc
-        self.E = []
+        self.E = None
 
     def _find_coord_extrema(self, rmax: float = 1.5):
         """
         Find the x,y bounds for the specified radius (rmax)
         """
 
-        self.xmax = self.loc + rmax
-        self.xmin = self.loc - rmax
-        self.ymax = self.loc + rmax
-        self.ymin = self.loc - rmax
+        self.xmax = self.loc[0] + rmax
+        self.xmin = self.loc[0] - rmax
+        self.ymax = self.loc[1] + rmax
+        self.ymin = self.loc[1] - rmax
 
         return self.xmax, self.xmin, self.ymax, self.ymin
     
@@ -56,7 +56,7 @@ class PointCharge:
             E_loc_val = np.inf
         return E_loc_val
 
-    def calculate_E_field(self, step: float = 0.01):
+    def calculate_E_field(self, charge, loc, step: float = 0.01):
         """
         Calculate the strength of the electric charge
         :param rmax: Maximum distance from the point charge to calculate the field in meters
@@ -65,17 +65,25 @@ class PointCharge:
         :return: 2D numpy array representing the field values produced by the point charge
         """
 
+        # Find the range of (x,y) values and create an empty matrix of matching size for E-field
+        x_range = np.arange(self.xmax, self.xmin, -step)
+        y_range = np.arange(self.ymax, self.ymin, -step)
+        self.E = np.empty(shape=(len(y_range), len(x_range)))
         # Calculate the E field for all values of (x,y) in the specified radius
-        for y in np.arange(self.ymax, self.ymin, -step):
-            _Y = y - self.loc[1]
-            E_row_vals = [] #np.array
-            for x in np.arange(self.xmax, self.xmin, -step):
-                _X = x - self.loc[0]
+        row_number = 0
+        for y in y_range:
+            _Y = y - loc[1]
+            # Start with an empty row
+            E_row_vals = np.array([])
+            # Calculate the E-field value for each x-value in a row (ie for a given y-value)
+            for x in x_range:
+                _X = x - loc[0]
                 r_sq = _X**2 + _Y**2
-                E_loc_val = self.coulombs_law(self.charge, r_sq)
-                E_row_vals.append(E_loc_val) #np.concatenate
-            self.E.append(E_row_vals) #np.concatenate
-        self.E = np.array(self.E) #remove this line
+                E_loc_val = self.coulombs_law(charge, r_sq)
+                E_row_vals = np.append(E_row_vals, E_loc_val)
+            # Place the row into the matrix
+            self.E[row_number] = E_row_vals
+            row_number += 1
         return self.E
 
     def plot(self, rmax: float = 1.5, step: float = 0.01, cmap='plasma', figsize: list[int] = [6, 6]):
@@ -85,8 +93,9 @@ class PointCharge:
         :param figsize: [x, y] size of the figure to produce. Must be a 2-element list
         :return: None
         """
-        if not self.E:
-            self.calculate_E_field(rmax, step)
+        if self.E is None:
+            self._find_coord_extrema(rmax)
+            self.calculate_E_field(self.charge, self.loc, step)
         plt.figure(figsize = figsize)
         # TODO: handle negative charge values
         plt.imshow(np.log(self.E), cmap=cmap, origin='lower')
@@ -116,19 +125,21 @@ class PointChargeSystem(PointCharge):
         self.net_E = None
         self.rmax = None
 
-    def load_charge_config(self, config_path) -> dict:
+    def load_charge_config(self, config_path: str | Path) -> dict:
         """
         Load a .json file to specify the charge configuration for this object.
         :param config_path: Path to the .json file to be loaded.
         """
-        config_path = Path(config_path)
+        if not isinstance(config_path, Path):
+            config_path = Path(config_path)
         if not config_path.exists():
             raise FileNotFoundError(f'The specified path: {config_path} does not exist.')
         ext = config_path.suffix
         if not ext == '.json':
             raise TypeError('The configuration file should be a .json file, not {ext}')
         
-        self.charge_config = json.load(config_path)
+        with open(config_path, 'r') as file:
+            self.charge_config = json.load(file)
         return self.charge_config
 
     def _find_coord_extrema(self, rmax: float = 1.5):
@@ -141,7 +152,7 @@ class PointChargeSystem(PointCharge):
         xmin_list = []
         ymax_list = []
         ymin_list = []
-        for charge in self.charge_config:
+        for charge in self.charge_config.values():
             loc = charge['loc']
             xmax = loc[0] + rmax
             xmax_list.append(xmax)
@@ -163,19 +174,34 @@ class PointChargeSystem(PointCharge):
         Calculate the net electric field for the system of point charges in chargesdict.
         :return: 2D numpy array representing the net field values produced by the system of point charges
         """
-        # FIXME: In order to handle the system of point charges, construct an equation with a term for the field of each point
-#        charge. Do this through a for loop where each item is a term, then use np.sum to add them all up at each
-#        location in the image. THE WAY THIS IS CURRENTLY IMPLEMENTED WILL NOT WORK.
         self._find_coord_extrema()
-        for q, loc in self.charge_config.values(): # change how we read this to match the new config format
-            # TODO: need to create E matrix such that it incorporates rmax from each point charge
-            E = PointCharge(q, loc).calculate_E_field(step) # TODO: can we use super() instead?
-            if not self.net_E:
-                self.net_E = np.shape(E)
+        if not isinstance(self.charge_config, dict):
+            try:
+                self.load_charge_config(self.charge_config)
+            except Exception as e:
+                raise Exception('Unable to load charge config. Use a dictionary or a valid .json config file. \n' + e)
+        for charge in self.charge_config.values():
+            E = super().calculate_E_field(charge['charge'], charge['loc'], step)
+            if self.net_E is None:
+                self.net_E = np.zeros(np.shape(E))
             self.net_E = np.add(self.net_E, E)
             del E # free up memory as we go
         return self.net_E
 
     def plot(self, rmax: float = 1.5, step: float = 0.01, cmap='plasma', figsize: list[int] = [6, 6]):
-        super().plot()
-        # TODO: whatever plot changes we need for this class
+        if self.net_E is None:
+            self._find_coord_extrema(rmax)
+            self.calculate_net_E_field(step)
+        plt.figure(figsize = figsize)
+        # TODO: handle negative charge values
+        plt.imshow(np.log(self.net_E), cmap=cmap, origin='lower')
+        plt.colorbar(label = 'lnE [V/m]')
+        plt.xlabel('X [m]', fontsize = 12)
+        plt.ylabel('Y [m]', fontsize = 12)
+        xticks = np.arange(self.xmin, self.xmax, (self.xmax - self.xmin) / 15)
+        plt.xticks(np.linspace(0, len(self.E[0]), len(xticks)), [str(np.round(xtick, 3)) for xtick in xticks],
+                   fontsize=8, rotation = 90)
+        yticks = np.arange(self.ymin, self.ymax, (self.ymax - self.ymin) / 15)
+        plt.yticks(np.linspace(0, len(self.E[0]), len(yticks)), [str(np.round(ytick, 3)) for ytick in yticks],
+                   fontsize=8)
+        # TODO: fix tick marks
