@@ -1,0 +1,56 @@
+Git Branches
+------------
+
+* fixes
+-X Fix the plot coords issue with PointCharge.calculate_E_field()
+- Handle negative charge values for plt.imshow() with log scaling
+- Fix tick marks on plots
+- Decide whether coulombs_law() is a static or class method
+-X Alter the way PointChargeSystem is initialized with a charge config.
+    -X Implememt a .json schema and create an example file for demonstration and
+      testing (push the ex config into the repo!)
+-X Fix the way PointChargeSystem.calculate_net_E_field() combines the E-field matrices of each charge
+-X Fix PointChargeSystem.calculate_net_E_field() to work with the new .json schema
+
+
+* notebook1
+- Create a jupyter notebook (fix up the existing one) to demonstrate the current functionality
+  once everything for static E-field is working
+
+
+* theory
+- Create a jupyter notebook which reviews basic EM theory and uses the API to demonstrate the concepts
+
+
+* optimize
+- Try to implement multiprocessing/multithreading for self.calculate_E_field()
+    - Use timeit, CProfile to get a better idea of what it is so slow currently
+-X The E field is currently being initialized as a list, filled in, then converted
+ to a np.array() obj. after. It should start as a np.array() and stay that way
+ for all operations. This should increase performance since they are likely faster
+ than lists. (Done in fixes branch)
+
+
+* cont_dist
+ - Try to create a class ContChargeDist which will represent a continuous
+ charge distribution rather than a discrete one. This means the user should be
+ able to pass in a function they define that describes the charge distribution.
+ This also means that I will have to find a way to integrate the electric field
+ equation.
+    - Look into scipy and numpy to see if they have any functionality for integration.
+      If they don't, either try implementing a Riemann sum (which could be _very_ slow)
+      or just abandon this branch. This is just something I thought would be cool to have.
+
+
+* equipotentials
+- Try to draw equipotential surfaces (really just lines since this is a 2D model).
+NOTE: This might not work out and end up being abandoned.
+
+
+* bfield
+- Create functionality to find the magnetic field of a steady current
+    - How can we display this on top of the E field? Probably best to use circle-dot
+      and circle-x to represent direction of B field
+        - How to find the direction of the B field? May have to use cross products
+          and define 3x1 matrices/vectors
+    - Need to start by creating a Current class to represent a dynamic E field

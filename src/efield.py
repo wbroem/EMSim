@@ -86,6 +86,16 @@ class PointCharge:
             row_number += 1
         return self.E
 
+    def log_format_E(self):
+        """Create a natural log map of the electric field and handle negative or zero values."""
+        # if not any values in E are negative:
+        # return log(E)
+        # else:
+        # cast negative values to be -log(val) and positive values to be log(val)
+
+        # Use np.maskedarray !
+        neg_ix = np.where(self.E<0)
+
     def plot(self, rmax: float = 1.5, step: float = 0.01, cmap='plasma', figsize: list[int] = [6, 6]):
         """
         Produce a plot of the 2D field of the point charge
@@ -97,8 +107,9 @@ class PointCharge:
             self._find_coord_extrema(rmax)
             self.calculate_E_field(self.charge, self.loc, step)
         plt.figure(figsize = figsize)
-        # TODO: handle negative charge values
-        plt.imshow(np.log(self.E), cmap=cmap, origin='lower')
+        #log_E_map = self.log_format_E()
+        # plt.imshow(log_E_map, cmap=cmap, origin='lower')
+        plt.imshow(self.E, cmap=cmap, origin='lower')
         plt.colorbar(label = 'lnE [V/m]')
         plt.xlabel('X [m]', fontsize = 12)
         plt.ylabel('Y [m]', fontsize = 12)
