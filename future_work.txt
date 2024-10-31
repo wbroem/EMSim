@@ -5,7 +5,7 @@ Git Branches
 -X Fix the plot coords issue with PointCharge.calculate_E_field()
 - Handle negative charge values for plt.imshow() with log scaling
 - Fix tick marks on plots
-- Decide whether coulombs_law() is a static or class method
+-X Decide whether coulombs_law() is a static or class method
 -X Alter the way PointChargeSystem is initialized with a charge config.
     -X Implememt a .json schema and create an example file for demonstration and
       testing (push the ex config into the repo!)
